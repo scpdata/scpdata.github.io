@@ -117,10 +117,55 @@
         }
 
         .auth-input:focus { border-color: var(--foundation-gold); }
+        
+        /* Modal Styles */
+        .modal-overlay {
+            background: rgba(0,0,0,0.9);
+            backdrop-filter: blur(4px);
+        }
     </style>
 </head>
 <body class="crt p-4 md:p-8 flex flex-col">
     <div class="scanline"></div>
+
+    <!-- Creation Modal -->
+    <div id="create-modal" class="fixed inset-0 z-[100] modal-overlay hidden flex items-center justify-center p-4">
+        <div class="bg-stone-900 border border-stone-700 w-full max-w-2xl p-6 shadow-2xl">
+            <h2 class="text-xl font-bold mb-4 text-foundation-gold border-b border-stone-800 pb-2">INITIALIZE NEW DATABASE ENTRY</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="text-[10px] text-stone-500 uppercase">Designation</label>
+                    <input id="new-scp-id" type="text" placeholder="SCP-XXXX" class="auth-input">
+                </div>
+                <div>
+                    <label class="text-[10px] text-stone-500 uppercase">Classification</label>
+                    <select id="new-scp-class" class="auth-input bg-stone-900">
+                        <option value="Safe">Safe</option>
+                        <option value="Euclid">Euclid</option>
+                        <option value="Keter">Keter</option>
+                        <option value="Thaumiel">Thaumiel</option>
+                        <option value="Apollyon">Apollyon</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mb-4">
+                <label class="text-[10px] text-stone-500 uppercase">Title</label>
+                <input id="new-scp-title" type="text" placeholder="Entry Title" class="auth-input">
+            </div>
+            <div class="mb-4">
+                <label class="text-[10px] text-stone-500 uppercase">Containment Procedures</label>
+                <textarea id="new-scp-procedures" class="auth-input h-20 resize-none"></textarea>
+            </div>
+            <div class="mb-4">
+                <label class="text-[10px] text-stone-500 uppercase">Description</label>
+                <textarea id="new-scp-description" class="auth-input h-20 resize-none"></textarea>
+            </div>
+            <div class="flex justify-end gap-4 mt-6">
+                <button onclick="toggleCreateModal(false)" class="text-xs uppercase text-stone-500 hover:text-white">Abort</button>
+                <button onclick="saveNewSCP()" class="bg-foundation-gold/10 border border-foundation-gold px-6 py-2 text-xs uppercase text-foundation-gold hover:bg-foundation-gold hover:text-black transition-all">Submit to RAISA</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Header Section -->
     <header class="border-b border-stone-800 pb-4 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -156,7 +201,7 @@
 
             <div id="admin-panel" class="hidden bg-stone-900/80 p-3 border border-stone-800 text-[10px] text-foundation-gold">
                 <p class="font-bold mb-2">ADMINISTRATOR PRIVILEGES ACTIVE</p>
-                <button onclick="createNewSCP()" class="w-full bg-stone-800 hover:bg-stone-700 p-2 border border-stone-700 uppercase">Initialize New Entry</button>
+                <button onclick="toggleCreateModal(true)" class="w-full bg-stone-800 hover:bg-stone-700 p-2 border border-stone-700 uppercase">Initialize New Entry</button>
             </div>
         </aside>
 
@@ -178,7 +223,7 @@
                             <label class="text-[10px] text-stone-500 block mb-1">IDENTIFICATION (Username)</label>
                             <div class="flex items-center gap-2">
                                 <input type="text" id="username" class="auth-input" placeholder="e.g. j.doe" autocomplete="off">
-                                <span class="text-stone-600 text-xs">@scp</span>
+                                <span class="text-stone-600 text-xs">@scpdb.org</span>
                             </div>
                         </div>
                         <div>
@@ -220,6 +265,7 @@
         const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwa3lxcmx4Y2VxYWJldXN1bXB2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1MTQzNTAsImV4cCI6MjA4ODA5MDM1MH0.tk6xPefdQ8tWrH0YX8RCCxRLCrZhfSePiBv-WeorLhY";
         
         let supabaseClient;
+        let ALL_DATA = [];
 
         function bootstrapSupabase() {
             try {
@@ -232,7 +278,7 @@
 
         supabaseClient = bootstrapSupabase();
 
-        const SCP_DATA = [
+        const HARDCODED_SCP = [
             { id: "SCP-001", title: "The Prototype", class: "Thaumiel", procedures: "Access restricted to O5 council. All unauthorized attempts to access this file will trigger immediate termination. File integrity is monitored via recursive checksums.", description: "SCP-001 refers to the primary source of the anomalous threat landscape. It is currently theorized to be a narrative singularity located within the Foundation's own infrastructure.", addendum: "The truth of the object is obscured by layers of misinformation." },
             { id: "SCP-035", title: "Possessive Mask", class: "Keter", procedures: "Sealed in a lead-lined glass case submerged in a pool of neutralizing acidic solution. Monitoring for corrosive leakage is required every 2 hours.", description: "A white porcelain comedy mask that secretes a highly corrosive and degenerative liquid from its orifices. Subject exerts a powerful psychic compulsion on sentient observers.", addendum: "Hosts typically experience total physiological collapse within 72 hours." },
             { id: "SCP-049", title: "Plague Doctor", class: "Euclid", procedures: "Contained within a standard secure humanoid containment cell. Sedation is required during transport. Any biological material encountered must be incinerated.", description: "A humanoid entity resembling a medieval plague doctor. It is capable of inducing biological cessation via direct skin contact.", addendum: "The entity claims to be curing a disease it refers to as the Pestilence." },
@@ -288,19 +334,39 @@
             { id: "SCP-040", title: "Evolution's Child", class: "Euclid", procedures: "Standard humanoid containment. Subject is allowed supervised interaction with staff.", description: "A young girl capable of manipulating the genetic structure of living organisms via touch.", addendum: "The subject has created several 'pet' entities." }
         ];
 
+        async function refreshDatabase() {
+            if (!supabaseClient) return;
+            
+            try {
+                // Fetch dynamic entries from DB
+                const { data: dbEntries, error } = await supabaseClient
+                    .from('scp_entries')
+                    .select('*');
+
+                if (error) {
+                    console.warn("Could not fetch DB entries, falling back to local data only.");
+                    ALL_DATA = [...HARDCODED_SCP];
+                } else {
+                    // Merge hardcoded with dynamic (dynamic takes precedence if ID overlaps)
+                    const dbIds = new Set(dbEntries.map(e => e.id));
+                    const staticFiltered = HARDCODED_SCP.filter(e => !dbIds.has(e.id));
+                    ALL_DATA = [...dbEntries, ...staticFiltered].sort((a,b) => a.id.localeCompare(b.id));
+                }
+                
+                renderList(ALL_DATA);
+            } catch (err) {
+                console.error("DB Sync Error:", err);
+            }
+        }
+
         async function handleAuth(type) {
             const user = document.getElementById('username').value.toLowerCase();
             const pass = document.getElementById('password').value;
             const errorEl = document.getElementById('auth-error');
-            const email = `${user}@scpdb.org`;
+            const email = user.includes('@') ? user : `${user}@scpdb.org`;
 
             if (!user || !pass) {
                 errorEl.innerText = "INPUT REQUIRED";
-                return;
-            }
-
-            if (!supabaseClient) {
-                errorEl.innerText = "SUPABASE CONNECTION FAILED";
                 return;
             }
 
@@ -315,7 +381,6 @@
                 }
 
                 if (result.error) throw result.error;
-                
                 onLoginSuccess(result.data.user);
             } catch (err) {
                 errorEl.innerText = err.message.toUpperCase();
@@ -335,7 +400,7 @@
                 
                 if (isAdmin) document.getElementById('admin-panel').classList.remove('hidden');
                 
-                renderList(SCP_DATA);
+                refreshDatabase();
             }, 700);
         }
 
@@ -393,37 +458,64 @@
 
                     <section class="bg-stone-900/50 p-6 border border-stone-800/50">
                         <h3 class="text-xs font-bold text-stone-400 uppercase mb-3">Field Addendum ${item.id}.A</h3>
-                        <p class="text-sm italic leading-relaxed text-stone-400 font-light">${formatRedacted(item.addendum)}</p>
+                        <p class="text-sm italic leading-relaxed text-stone-400 font-light">${formatRedacted(item.addendum || "No additional data available.")}</p>
                     </section>
                 </div>
             `;
             document.getElementById('char-count').innerText = `SIZE: ${(item.description.length + item.procedures.length)}B`;
         }
 
-        function createNewSCP() {
-            const id = prompt("Assign SCP ID (e.g., SCP-XXXX):");
-            if (!id) return;
+        function toggleCreateModal(show) {
+            const modal = document.getElementById('create-modal');
+            if (show) modal.classList.remove('hidden');
+            else modal.classList.add('hidden');
+        }
+
+        async function saveNewSCP() {
+            const id = document.getElementById('new-scp-id').value;
+            const title = document.getElementById('new-scp-title').value;
+            const cls = document.getElementById('new-scp-class').value;
+            const proc = document.getElementById('new-scp-procedures').value;
+            const desc = document.getElementById('new-scp-description').value;
+
+            if (!id || !title || !proc || !desc) {
+                alert("ALL FIELDS MANDATORY FOR RAISA SUBMISSION.");
+                return;
+            }
+
             const newItem = {
                 id: id,
-                title: "In-Processing File",
-                class: "Euclid",
-                procedures: "Pending data upload.",
-                description: "Initial containment established. Detailed physical and anomalous analysis is currently being conducted.",
-                addendum: "Subject under review by RAISA."
+                title: title,
+                class: cls,
+                procedures: proc,
+                description: desc,
+                addendum: "Generated via Site-Admin Interface."
             };
-            SCP_DATA.unshift(newItem);
-            renderList(SCP_DATA);
-            loadSCP(newItem);
+
+            try {
+                const { error } = await supabaseClient
+                    .from('scp_entries')
+                    .upsert(newItem);
+
+                if (error) throw error;
+                
+                toggleCreateModal(false);
+                await refreshDatabase();
+                loadSCP(newItem);
+            } catch (err) {
+                alert("DATABASE UPLOAD FAILED: " + err.message);
+            }
         }
 
         function formatRedacted(text) {
+            if (!text) return "";
             return text.replace(/\[REDACTED\]/g, '<span class="glitch-redact">██████████</span>')
                        .replace(/█{1,}/g, match => `<span class="glitch-redact">${match}</span>`);
         }
 
         document.getElementById('db-search').addEventListener('input', (e) => {
             const query = e.target.value.toLowerCase();
-            const filtered = SCP_DATA.filter(item => 
+            const filtered = ALL_DATA.filter(item => 
                 item.id.toLowerCase().includes(query) || 
                 item.title.toLowerCase().includes(query)
             );
@@ -431,6 +523,11 @@
         });
 
         document.getElementById('current-date').innerText = new Date().toLocaleString().toUpperCase();
+        
+        // Check for existing session
+        supabaseClient.auth.getSession().then(({data}) => {
+            if (data.session) onLoginSuccess(data.session.user);
+        });
     </script>
 </body>
 </html>
