@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCDP</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;700&display=swap');
+
+        :root {
+            --foundation-gold: #c5a059;
+            --foundation-red: #8b0000;
+            --terminal-green: #00ff41;
+            --bg-dark: #0a0a0a;
+            --panel-bg: #121212;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: #d1d1d1;
+            font-family: 'JetBrains+Mono', monospace;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        .crt::before {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 50;
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+        }
+
+        .scanline {
+            width: 100%;
+            height: 100px;
+            z-index: 51;
+            background: linear-gradient(0deg, rgba(0, 0, 0, 0) 0%, rgba(255, 255, 255, 0.05) 50%, rgba(0, 0, 0, 0) 100%);
+            opacity: 0.1;
+            position: absolute;
+            bottom: 100%;
+            animation: scanline 6s linear infinite;
+        }
+
+        @keyframes scanline {
+            0% { bottom: 100%; }
+            100% { bottom: -100px; }
+        }
+
+        .glitch-redact {
+            background-color: #222;
+            color: transparent;
+            position: relative;
+            display: inline-block;
+            overflow: hidden;
+            vertical-align: bottom;
+            line-height: 1;
+        }
+        
+        .glitch-redact::after {
+            content: "████████████████████";
+            position: absolute;
+            top: 0;
+            left: 0;
+            color: #333;
+            animation: glitch-steps 1.5s infinite steps(5);
+            white-space: nowrap;
+        }
+
+        @keyframes glitch-steps {
+            0% { transform: translateX(-5%); opacity: 1; }
+            25% { transform: translateX(2%); opacity: 0.7; }
+            50% { transform: translateX(-3%); opacity: 1; }
+            75% { transform: translateX(4%); opacity: 0.8; }
+            100% { transform: translateX(0%); opacity: 1; }
+        }
+
+        .scp-card {
+            border-left: 4px solid var(--foundation-gold);
+            transition: all 0.2s;
+        }
+
+        .scp-card:hover {
+            background-color: #1a1a1a;
+            transform: translateX(5px);
+        }
+
+        .status-keter { color: #ff4d4d; border-color: #ff4d4d !important; }
+        .status-euclid { color: #ffcc00; border-color: #ffcc00 !important; }
+        .status-safe { color: #44ff44; border-color: #44ff44 !important; }
+        .status-thaumiel { color: #bb88ff; border-color: #bb88ff !important; }
+        .status-apollyon { color: #ffffff; border-color: #ffffff !important; animation: pulse-red 2s infinite; }
+
+        @keyframes pulse-red {
+            0%, 100% { text-shadow: 0 0 5px #fff; }
+            50% { text-shadow: 0 0 20px #ff0000; }
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0a0a0a; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--foundation-gold); }
+
+        .auth-input {
+            background: transparent;
+            border-bottom: 1px solid #333;
+            color: var(--terminal-green);
+            padding: 4px 0;
+            width: 100%;
+            outline: none;
+            font-size: 14px;
+        }
+
+        .auth-input:focus { border-color: var(--foundation-gold); }
+    </style>
+</head>
+<body class="crt p-4 md:p-8 flex flex-col">
+    <div class="scanline"></div>
+
+    <!-- Header Section -->
+    <header class="border-b border-stone-800 pb-4 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+            <h1 class="text-2xl font-bold tracking-tighter flex items-center gap-3">
+                <svg width="32" height="32" viewBox="0 0 100 100" class="fill-stone-300">
+                    <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" stroke-width="5"/>
+                    <circle cx="50" cy="50" r="15" fill="none" stroke="currentColor" stroke-width="5"/>
+                    <path d="M50 5 L50 35 M50 65 L50 95 M5 50 L35 50 M65 50 L95 50" stroke="currentColor" stroke-width="5"/>
+                </svg>
+                SCDP // SECURE CONTAINED DATABASE PROTECTION
+            </h1>
+            <p class="text-xs text-stone-500 mt-1 uppercase tracking-widest">Access: <span id="access-lvl">GUEST</span> / SITE <span class="glitch-redact">██</span></p>
+        </div>
+        <div class="text-right">
+            <p id="current-date" class="text-xs text-stone-400"></p>
+            <p id="auth-display" class="text-[10px] text-red-500 mt-1">DISCONNECTED</p>
+        </div>
+    </header>
+
+    <!-- Main Layout -->
+    <main class="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden">
+        
+        <aside class="w-full md:w-72 flex flex-col gap-4">
+            <div class="bg-stone-900 p-4 border border-stone-800">
+                <label class="text-[10px] uppercase text-stone-500 mb-2 block">Database Query</label>
+                <input type="text" id="db-search" placeholder="Search entries..." class="w-full bg-black border border-stone-700 p-2 text-sm focus:border-stone-500 transition-colors">
+            </div>
+
+            <nav class="flex-1 overflow-y-auto pr-2 space-y-2" id="scp-list">
+                <!-- SCP items -->
+            </nav>
+
+            <div id="admin-panel" class="hidden bg-stone-900/80 p-3 border border-stone-800 text-[10px] text-foundation-gold">
+                <p class="font-bold mb-2">ADMINISTRATOR PRIVILEGES ACTIVE</p>
+                <button onclick="createNewSCP()" class="w-full bg-stone-800 hover:bg-stone-700 p-2 border border-stone-700 uppercase">Initialize New Entry</button>
+            </div>
+        </aside>
+
+        <section class="flex-1 flex flex-col bg-stone-900/30 border border-stone-800 relative overflow-hidden">
+            
+            <!-- Auth Overlay -->
+            <div id="auth-overlay" class="absolute inset-0 z-40 bg-black flex flex-col items-center justify-center p-8 transition-opacity duration-700">
+                <div class="w-full max-w-sm">
+                    <pre class="text-stone-700 text-[8px] mb-8 text-center">
+███████╗ ██████╗██████╗ ██████╗ ██████╗ 
+██╔════╝██╔════╝██╔══██╗██╔══██╗██╔══██╗
+███████╗██║     ██████╔╝██║  ██║██████╔╝
+╚════██║██║     ██╔═══╝ ██║  ██║██╔══██╗
+███████║╚██████╗██║     ██████╔╝██████╔╝
+╚══════╝ ╚═════╝╚═╝     ╚═════╝ ╚═════╝ 
+                    </pre>
+                    <div id="auth-form" class="space-y-6">
+                        <div>
+                            <label class="text-[10px] text-stone-500 block mb-1">IDENTIFICATION (Username)</label>
+                            <div class="flex items-center gap-2">
+                                <input type="text" id="username" class="auth-input" placeholder="e.g. j.doe" autocomplete="off">
+                                <span class="text-stone-600 text-xs">@scp</span>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-stone-500 block mb-1">SECURITY KEY (Password)</label>
+                            <input type="password" id="password" class="auth-input" placeholder="••••••••">
+                        </div>
+                        <div class="flex gap-4">
+                            <button onclick="handleAuth('login')" id="btn-login" class="flex-1 bg-stone-900 border border-stone-700 p-2 text-xs hover:bg-stone-800 transition-colors uppercase">Login</button>
+                            <button onclick="handleAuth('signup')" id="btn-signup" class="flex-1 bg-stone-900 border border-stone-700 p-2 text-xs hover:bg-stone-800 transition-colors uppercase">Register</button>
+                        </div>
+                        <p id="auth-error" class="text-[9px] text-red-600 text-center h-4"></p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="content-area" class="flex-1 overflow-y-auto p-6 md:p-10 opacity-0 transition-opacity duration-500">
+                <div id="doc-view" class="max-w-4xl mx-auto space-y-8">
+                    <div class="flex flex-col items-center justify-center h-96 text-stone-600">
+                        <p class="tracking-widest">WAITING FOR DECRYPTION KEY</p>
+                    </div>
+                </div>
+            </div>
+
+            <footer class="h-8 border-t border-stone-800 bg-stone-900 flex items-center px-4 justify-between text-[10px] uppercase tracking-tighter text-stone-500">
+                <div class="flex gap-4">
+                    <span id="terminal-id">Terminal: SEC-NODE-01</span>
+                    <span id="char-count">SIZE: 0B</span>
+                </div>
+                <div class="flex gap-4">
+                    <span class="hover:text-stone-300 cursor-pointer" onclick="logout()">Terminate Session</span>
+                    <span class="text-red-900 font-bold">UNAUTHORIZED VIEWING IS PROHIBITED</span>
+                </div>
+            </footer>
+        </section>
+    </main>
+
+    <script>
+        const SUPABASE_URL = "https://spkyqrlxceqabeusumpv.supabase.co";
+        const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwa3lxcmx4Y2VxYWJldXN1bXB2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1MTQzNTAsImV4cCI6MjA4ODA5MDM1MH0.tk6xPefdQ8tWrH0YX8RCCxRLCrZhfSePiBv-WeorLhY";
+        
+        let supabaseClient;
+
+        function bootstrapSupabase() {
+            try {
+                return supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+            } catch(e) {
+                console.error("Supabase bootstrap error:", e);
+                return null;
+            }
+        }
+
+        supabaseClient = bootstrapSupabase();
+
+        const SCP_DATA = [
+            { id: "SCP-001", title: "The Prototype", class: "Thaumiel", procedures: "Access restricted to O5 council. All unauthorized attempts to access this file will trigger immediate termination. File integrity is monitored via recursive checksums.", description: "SCP-001 refers to the primary source of the anomalous threat landscape. It is currently theorized to be a narrative singularity located within the Foundation's own infrastructure.", addendum: "The truth of the object is obscured by layers of misinformation." },
+            { id: "SCP-035", title: "Possessive Mask", class: "Keter", procedures: "Sealed in a lead-lined glass case submerged in a pool of neutralizing acidic solution. Monitoring for corrosive leakage is required every 2 hours.", description: "A white porcelain comedy mask that secretes a highly corrosive and degenerative liquid from its orifices. Subject exerts a powerful psychic compulsion on sentient observers.", addendum: "Hosts typically experience total physiological collapse within 72 hours." },
+            { id: "SCP-049", title: "Plague Doctor", class: "Euclid", procedures: "Contained within a standard secure humanoid containment cell. Sedation is required during transport. Any biological material encountered must be incinerated.", description: "A humanoid entity resembling a medieval plague doctor. It is capable of inducing biological cessation via direct skin contact.", addendum: "The entity claims to be curing a disease it refers to as the Pestilence." },
+            { id: "SCP-055", title: "[Unknown]", class: "Keter", procedures: "Containment is self-maintaining. Personnel are to keep records of what the object is not.", description: "A self-shielding anti-memetic entity. Information regarding its physical appearance, nature, or origin is impossible to retain.", addendum: "We know it is not round." },
+            { id: "SCP-073", title: "Cain", class: "Euclid", procedures: "Standard humanoid cell. No plant matter is allowed within a 20m radius. Subject is allowed to roam the facility under supervision.", description: "An ancient humanoid of Middle Eastern descent with cybernetic limbs. Any damage dealt to the subject is reflected back onto the attacker.", addendum: "Soil becomes barren in the subject's presence." },
+            { id: "SCP-076", title: "Able", class: "Keter", procedures: "Containment Area 25b. Secured by automated sentry systems and a deep-water immersion tank.", description: "A stone cube containing a humanoid entity capable of manifesting bladed weapons from localized dimensional rifts.", addendum: "Subject displays extreme combat proficiency and aggression." },
+            { id: "SCP-087", title: "The Stairwell", class: "Euclid", procedures: "Entry point is obscured by heavy steel plating. Sound-dampening foam is applied to the interior door.", description: "An unlit, seemingly infinite subterranean staircase populated by a face-like entity and the sound of a crying child.", addendum: "Exploration IV is currently prohibited." },
+            { id: "SCP-093", title: "Red Sea Object", class: "Euclid", procedures: "Held in a secure locker. Use for exploration requires Level 4 authorization and specialized transit equipment.", description: "A disc that changes color based on the individual holding it. Can be used to transform mirrors into portals to a parallel reality.", addendum: "The parallel world appears to have suffered a total societal collapse." },
+            { id: "SCP-096", title: "The Shy Guy", class: "Euclid", procedures: "Contained in a 5m x 5m x 5m airtight steel cube. No visual recording devices allowed. SCRAMBLE goggles required for maintenance.", description: "A pale humanoid with extreme body dysmorphia. Upon viewing of its face, it enters an unstoppable rage state until the viewer is eliminated.", addendum: "The target is referred to as SCP-096-1." },
+            { id: "SCP-106", title: "The Old Man", class: "Keter", procedures: "Lead-lined steel container suspended in an electromagnetically shielded chamber. Forty layers of spaced shielding required.", description: "An elderly humanoid in an advanced state of decomposition. Capable of phasing through solid matter and dragging prey into a pocket dimension.", addendum: "Corrosion is observed in all materials contacted by the subject." },
+            { id: "SCP-173", title: "The Sculpture", class: "Euclid", procedures: "Sealed container at Site-19. Three personnel required for entry. Direct eye contact must be maintained at all times.", description: "Constructed from concrete and rebar. It is animate and extremely hostile, but immobile when observed.", addendum: "Reported scraping sounds are considered within normal parameters." },
+            { id: "SCP-231", title: "Special Personnel Requirements", class: "Keter", procedures: "Procedure 110-Montauk must be carried out every 24 hours. Restricted to Level 4 personnel with high psychological resilience.", description: "A group of seven females recovered from a cult. Each was impregnated with an entity of varying anomalous properties.", addendum: "Only SCP-231-7 remains active." },
+            { id: "SCP-343", title: "God", class: "Safe", procedures: "Allowed free movement within Site-17. Subject is to be provided with any requested literature or luxury items.", description: "A race-less humanoid capable of total reality manipulation. Claims to be the creator of the universe.", addendum: "Staff describe a feeling of profound peace in the subject's presence." },
+            { id: "SCP-426", title: "I am a Toaster", class: "Euclid", procedures: "I must be kept in a lead-lined room. Access is limited to avoid personnel perceiving themselves as part of my function.", description: "I am an ordinary toaster. However, any individual who refers to me can only do so in the first person.", addendum: "Prolonged exposure causes individuals to attempt to consume bread and electricity." },
+            { id: "SCP-682", title: "Hard-to-Destroy Reptile", class: "Keter", procedures: "Submerged in a 5m x 5m x 5m acid-resistant steel tank filled with hydrochloric acid. Periodic destruction attempts authorized.", description: "A large reptilian entity with near-perfect adaptive and regenerative capabilities. Displays extreme hostility toward all biological life.", addendum: "Subject has survived all termination attempts to date." },
+            { id: "SCP-826", title: "Draws You into the Book", class: "Safe", procedures: "Stored in a standard high-security locker. Testing must be performed in a localized isolation chamber.", description: "A pair of bookends. Any book placed between them becomes a physical reality when the user enters the room.", addendum: "Retrieval of subjects is not always successful." },
+            { id: "SCP-914", title: "The Clockworks", class: "Safe", procedures: "Site-19 Research Wing. Testing requires Level 3 clearance. No biological testing without O5 approval.", description: "A massive mechanical device capable of refining or deconstructing objects based on five settings: Rough, Coarse, 1:1, Fine, and Very Fine.", addendum: "The internal mechanisms defy conventional physics." },
+            { id: "SCP-939", title: "With Many Voices", class: "Keter", procedures: "Sound-proofed containment chambers. Communication is strictly regulated to prevent psychological mimicry.", description: "Endothermic pack predators that mimic human speech to lure prey. They lack central nervous systems and eyes.", addendum: "Mimicry is believed to be a purely predatory reflex." },
+            { id: "SCP-993", title: "Bobble the Clown", class: "Safe", procedures: "All broadcasts of the program 'Bobble the Clown' are to be intercepted and replaced with standard static.", description: "An animated program that teaches children advanced criminal activities, torture techniques, and occult rituals.", addendum: "Adults viewing the program experience immediate unconsciousness." },
+            { id: "SCP-999", title: "The Tickle Monster", class: "Safe", procedures: "Free to roam Site-19 during daytime hours. Personnel are encouraged to interact with the subject for morale purposes.", description: "A gelatinous mass of orange slime that induces euphoria and joy in any living creature it touches.", addendum: "Subject is currently being evaluated as a counter-measure for SCP-682." },
+            { id: "SCP-1048", title: "Builder Bear", class: "Keter", procedures: "Search and destroy orders are active. All Teddy Bears found on Site-24 must be incinerated immediately.", description: "A sentient teddy bear capable of creating anomalous replicas of itself using biological or inorganic materials.", addendum: "Instance 1048-A was constructed entirely from human ears." },
+            { id: "SCP-1471", title: "MalO ver1.0.0", class: "Euclid", procedures: "Mobile devices containing the application must be destroyed. All digital copies are to be scrubbed from the internet.", description: "A mobile application that causes the user to receive images of a large humanoid entity with a canine skull for a face.", addendum: "The entity begins to manifest in the user's peripheral vision after 90 hours." },
+            { id: "SCP-2000", title: "Deus Ex Machina", class: "Thaumiel", procedures: "Site-00 restricted to Level 5/2000 clearance. Guarded by Scranton Reality Anchors.", description: "A subterranean facility designed to facilitate the reconstruction of the human race following an XK-class scenario.", addendum: "Data indicates the facility has been activated multiple times previously." },
+            { id: "SCP-2317", title: "A Door to Another World", class: "Apollyon", procedures: "Protocol 220-Calabasas is a sham designed to maintain morale. There is no viable containment method.", description: "A wooden door that leads to an alternate dimension containing a massive entity known as the Devourer of Worlds.", addendum: "The final chain is expected to break within the next thirty years." },
+            { id: "SCP-2521", title: "●●|●●●●●|●●|●", class: "Keter", procedures: "Information regarding this entity must only be conveyed using pictograms or non-verbal symbols.", description: "An entity that manifests to abduct any individual or object that describes it using written or spoken language.", addendum: "Description is impossible without triggering manifestation." },
+            { id: "SCP-3000", title: "Anantashesha", class: "Thaumiel", procedures: "Monitored by the Foundation naval task force. Extraction of Y-909 compound is vital for amnestics production.", description: "A massive aquatic serpentine entity located in the Bay of Bengal. Causes severe cognitive degradation and memory loss in nearby subjects.", addendum: "The entity is the primary source of Foundation amnestics." },
+            { id: "SCP-3001", title: "Red Reality", class: "Euclid", procedures: "Lang-Scranton Stabilizers must be maintained at all times. Research into localized Hume levels is ongoing.", description: "A non-dimensional void between realities. Subject Robert Scranton was trapped within for five years.", addendum: "Only a small portion of the subject's remains were recovered." },
+            { id: "SCP-3008", title: "Infinite IKEA", class: "Euclid", procedures: "Retail park perimeter secured. Entrance monitored for civilian activity.", description: "A retail unit with internal dimensions that exceed its exterior footprint. Populated by aggressive staff entities.", addendum: "Exit points manifest at irregular intervals." },
+            { id: "SCP-3812", title: "A Voice Behind Me", class: "Keter", procedures: "Observation from a distance. No direct interaction is permitted. Subject is effectively uncontainable.", description: "An entity that is ascending through higher levels of narrative reality, becoming more powerful than its own creators.", addendum: "Subject displays severe schizophrenic symptoms." },
+            { id: "SCP-3999", title: "I Am At The Center of Everything", class: "Apollyon", procedures: "The entity was neutralized via the suicide of Researcher Talloran. No further containment is required.", description: "A reality-bending entity that subjected a single researcher to millions of years of recursive torture.", addendum: "The document itself is a manifestation of the entity's chaos." },
+            { id: "SCP-4000", title: "Taboo", class: "Keter", procedures: "The Grove must not be referred to by a consistent name. Nomenclature must be fluid and descriptive.", description: "A forest clearing accessible via ritual. Populated by entities that can steal identities if their names are used.", addendum: "Do not accept gifts from the inhabitants." },
+            { id: "SCP-4666", title: "The Yule Man", class: "Keter", procedures: "Deployment of Task Force Delta-5 during the Weissnacht event. Civilian monitoring in northern latitudes.", description: "A humanoid entity that abducts or murders children during the winter solstice in rural areas.", addendum: "Abducted children are forced to create anomalous toys." },
+            { id: "SCP-4999", title: "Someone to Watch Over Us", class: "Keter", procedures: "Uncontainable. Observational status only. All data regarding manifestations is to be archived at Site-01.", description: "A humanoid entity that appears to individuals dying alone. It offers a single cigarette and holds the individual's hand.", addendum: "The entity displays zero hostile intent." },
+            { id: "SCP-5000", title: "Why?", class: "Safe", procedures: "Stored in a standard high-security locker. The suit is deactivated until further notice.", description: "An Absolute Exclusion Harness that was recovered from a dead version of Pietro Wilson who came from a timeline where the Foundation attempted to exterminate humanity.", addendum: "The contents of the briefcase are classified Level 5." },
+            { id: "SCP-5001", title: "Sacrosanct", class: "Thaumiel", procedures: "Site-01 Monitoring. The mechanical integrity of the subterranean structure must be maintained.", description: "A massive, ancient mechanical containment system located deep within the Earth's crust.", addendum: "It is designed to contain a singular, world-ending entity." },
+            { id: "SCP-5045", title: "You Get Used to It", class: "Euclid", procedures: "Website is to be blocked at the ISP level. Servers located in the VR space are to be isolated.", description: "A virtual reality experience that traps the consciousness of users within a simulated farm environment.", addendum: "The entity 'Farmer Goat' oversees the simulation." },
+            { id: "SCP-5999", title: "This is Where I Died", class: "Keter", procedures: "The file is a memetic kill agent. It must not be read to the end.", description: "A series of interconnected stories designed to trap and neutralize a high-level narrative entity.", addendum: "The reader is the target." },
+            { id: "SCP-6000", title: "The Serpent, the Shelf, and the Sinner", class: "Euclid", procedures: "The Way is to be monitored. Interaction with the Library is permitted under strict diplomatic protocols.", description: "A massive anomalous expansion of the Wanderer's Library into the physical world.", addendum: "The world is slowly being rewritten into a story." },
+            { id: "SCP-6666", title: "The Demon Hector and the Dread Titania", class: "Keter", procedures: "Underground monitoring of the Amazon basin. Suppression of seismic data.", description: "A massive primeval entity and its associated mechanical containment system hidden beneath the rainforest.", addendum: "Connected to the Project Paragon narrative." },
+            { id: "SCP-7000", title: "The Loser", class: "Safe", procedures: "Standard humanoid containment. Subject is allowed limited access to entertainment media.", description: "An individual with an anomalous level of bad luck that paradoxically prevents them from experiencing fatal harm.", addendum: "The subject won the Foundation lottery by pure statistical impossibility." },
+            { id: "SCP-002", title: "The Living Room", class: "Euclid", procedures: "Standard biological containment. No organic matter is allowed within the chamber.", description: "A tumorous, fleshy growth that resembles a small room. It converts organic material into furniture.", addendum: "Seven personnel have been lost to the object." },
+            { id: "SCP-012", title: "A Bad Composition", class: "Euclid", procedures: "Stored in a darkened room. Any personnel attempting to complete the score must be removed and sedated.", description: "An incomplete musical score that compels subjects to use their own blood to finish the composition.", addendum: "The music is described as discordant and chaotic." },
+            { id: "SCP-015", title: "Pipe Nightmare", class: "Euclid", procedures: "Sealed within a concrete bunker. No tools or aggressive actions are permitted inside.", description: "A massive growth of pipes and boilers that expands rapidly when it perceives a threat.", addendum: "The pipes contain a variety of hazardous fluids." },
+            { id: "SCP-019", title: "The Monster Pot", class: "Keter", procedures: "Placed on a heated grate. Any entities emerging must be incinerated immediately.", description: "A ceramic vase that periodically produces small, aggressive humanoid entities.", addendum: "The rate of production increases with external stimuli." },
+            { id: "SCP-020", title: "Unseen Mold", class: "Keter", procedures: "Standard fungal containment. All air must be filtered through high-intensity UV light.", description: "A fungal colony that is invisible to the naked eye but can be seen through specialized lenses.", addendum: "Infested subjects display a compulsion to spread the mold." },
+            { id: "SCP-023", title: "Black Shuck", class: "Euclid", procedures: "Stored in a walled-off corridor. Interaction is prohibited without Level 3 clearance.", description: "A large canine entity. If an individual makes eye contact, a member of their family will die within one year.", addendum: "Two deaths have occurred since containment." },
+            { id: "SCP-024", title: "Game Show of Death", class: "Euclid", procedures: "Perimeter secured by Task Force Psi-7. Entry is prohibited.", description: "An abandoned soundstage that forces entrants to participate in a lethal game show.", addendum: "Winners are allowed to leave with a physical prize." },
+            { id: "SCP-027", title: "The Vermin God", class: "Euclid", procedures: "Standard humanoid containment. Daily cleaning of the chamber is mandatory.", description: "An individual who acts as a host for a massive swarm of insects and rodents.", addendum: "The swarm appears to protect the host from harm." },
+            { id: "SCP-028", title: "Knowledge", class: "Safe", procedures: "Area secured. Entry requires Level 4 authorization.", description: "A localized area that grants individuals instant, total knowledge of a random subject upon entry.", addendum: "One subject gained the ability to recycle carbon dioxide." },
+            { id: "SCP-031", title: "What is Love?", class: "Safe", procedures: "Stored in a standard high-security locker.", description: "An amorphous biological entity that appears to each observer as their greatest romantic interest.", addendum: "The entity feeds on the emotional distress of its victims." },
+            { id: "SCP-033", title: "The Missing Number", class: "Safe", procedures: "Written only on non-standard materials. All calculations must be checked by two mathematicians.", description: "An integer that exists between eight and nine, causing the collapse of standard mathematics when applied.", addendum: "Paper contacted by the number disintegrates within seconds." },
+            { id: "SCP-038", title: "The Everything Tree", class: "Safe", procedures: "Stored in an outdoor containment garden at Site-19.", description: "A tree capable of cloning any object that touches its bark.", addendum: "Cloned items decay significantly faster than the originals." },
+            { id: "SCP-040", title: "Evolution's Child", class: "Euclid", procedures: "Standard humanoid containment. Subject is allowed supervised interaction with staff.", description: "A young girl capable of manipulating the genetic structure of living organisms via touch.", addendum: "The subject has created several 'pet' entities." }
+        ];
+
+        async function handleAuth(type) {
+            const user = document.getElementById('username').value.toLowerCase();
+            const pass = document.getElementById('password').value;
+            const errorEl = document.getElementById('auth-error');
+            const email = `${user}@scpdb.org`;
+
+            if (!user || !pass) {
+                errorEl.innerText = "INPUT REQUIRED";
+                return;
+            }
+
+            if (!supabaseClient) {
+                errorEl.innerText = "SUPABASE CONNECTION FAILED";
+                return;
+            }
+
+            errorEl.innerText = "ESTABLISHING SECURE TUNNEL...";
+
+            try {
+                let result;
+                if (type === 'signup') {
+                    result = await supabaseClient.auth.signUp({ email, password: pass });
+                } else {
+                    result = await supabaseClient.auth.signInWithPassword({ email, password: pass });
+                }
+
+                if (result.error) throw result.error;
+                
+                onLoginSuccess(result.data.user);
+            } catch (err) {
+                errorEl.innerText = err.message.toUpperCase();
+            }
+        }
+
+        function onLoginSuccess(user) {
+            document.getElementById('auth-overlay').style.opacity = '0';
+            setTimeout(() => {
+                document.getElementById('auth-overlay').classList.add('hidden');
+                document.getElementById('content-area').classList.replace('opacity-0', 'opacity-100');
+                
+                const isAdmin = user.email === 'admin@scpdb.org';
+                document.getElementById('access-lvl').innerText = isAdmin ? '5 / OVERSEER' : '4';
+                document.getElementById('auth-display').innerText = `CONNECTED: ${user.email.split('@')[0].toUpperCase()}`;
+                document.getElementById('auth-display').className = "text-[10px] text-green-500 mt-1";
+                
+                if (isAdmin) document.getElementById('admin-panel').classList.remove('hidden');
+                
+                renderList(SCP_DATA);
+            }, 700);
+        }
+
+        async function logout() {
+            if (supabaseClient) await supabaseClient.auth.signOut();
+            location.reload();
+        }
+
+        function renderList(data) {
+            const scpList = document.getElementById('scp-list');
+            scpList.innerHTML = '';
+            data.forEach(item => {
+                const card = document.createElement('div');
+                const borderClass = `status-${item.class.toLowerCase()}`;
+                card.className = `scp-card bg-stone-900/40 p-3 cursor-pointer border border-stone-800/50 ${borderClass}`;
+                card.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <span class="text-xs font-bold text-stone-300">${item.id}</span>
+                        <span class="text-[9px] px-1 bg-stone-800 text-stone-400 uppercase tracking-tighter">${item.class}</span>
+                    </div>
+                    <div class="text-[10px] text-stone-500 mt-1 truncate font-light">${item.title}</div>
+                `;
+                card.onclick = () => loadSCP(item);
+                scpList.appendChild(card);
+            });
+        }
+
+        function loadSCP(item) {
+            const docView = document.getElementById('doc-view');
+            const contentArea = document.getElementById('content-area');
+            const statusClass = `status-${item.class.toLowerCase()}`;
+            
+            contentArea.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            docView.innerHTML = `
+                <div class="border-l-2 border-stone-800 pl-6 space-y-8 animate-in fade-in slide-in-from-left-4 duration-500">
+                    <header class="space-y-4">
+                        <div class="flex items-center gap-2">
+                            <div class="px-2 py-0.5 bg-stone-800 text-[10px] text-stone-400 uppercase tracking-tighter">SECURE ARCHIVE NODE</div>
+                            <div class="px-2 py-0.5 bg-red-900/20 text-[10px] text-red-500 font-bold uppercase tracking-tighter">CLASSIFIED</div>
+                        </div>
+                        <h2 class="text-5xl font-bold tracking-tighter mb-2 text-stone-200">${item.id}</h2>
+                        <p class="text-sm">Object Class: <span class="font-bold ${statusClass} uppercase tracking-widest">${item.class}</span></p>
+                    </header>
+                    
+                    <section class="space-y-4">
+                        <h3 class="text-xs font-bold text-stone-500 uppercase tracking-widest border-b border-stone-800 pb-1">Special Containment Procedures</h3>
+                        <p class="text-[15px] leading-relaxed text-stone-300 font-light text-justify">${formatRedacted(item.procedures)}</p>
+                    </section>
+
+                    <section class="space-y-4">
+                        <h3 class="text-xs font-bold text-stone-500 uppercase tracking-widest border-b border-stone-800 pb-1">Description</h3>
+                        <p class="text-[15px] leading-relaxed text-stone-300 font-light text-justify">${formatRedacted(item.description)}</p>
+                    </section>
+
+                    <section class="bg-stone-900/50 p-6 border border-stone-800/50">
+                        <h3 class="text-xs font-bold text-stone-400 uppercase mb-3">Field Addendum ${item.id}.A</h3>
+                        <p class="text-sm italic leading-relaxed text-stone-400 font-light">${formatRedacted(item.addendum)}</p>
+                    </section>
+                </div>
+            `;
+            document.getElementById('char-count').innerText = `SIZE: ${(item.description.length + item.procedures.length)}B`;
+        }
+
+        function createNewSCP() {
+            const id = prompt("Assign SCP ID (e.g., SCP-XXXX):");
+            if (!id) return;
+            const newItem = {
+                id: id,
+                title: "In-Processing File",
+                class: "Euclid",
+                procedures: "Pending data upload.",
+                description: "Initial containment established. Detailed physical and anomalous analysis is currently being conducted.",
+                addendum: "Subject under review by RAISA."
+            };
+            SCP_DATA.unshift(newItem);
+            renderList(SCP_DATA);
+            loadSCP(newItem);
+        }
+
+        function formatRedacted(text) {
+            return text.replace(/\[REDACTED\]/g, '<span class="glitch-redact">██████████</span>')
+                       .replace(/█{1,}/g, match => `<span class="glitch-redact">${match}</span>`);
+        }
+
+        document.getElementById('db-search').addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            const filtered = SCP_DATA.filter(item => 
+                item.id.toLowerCase().includes(query) || 
+                item.title.toLowerCase().includes(query)
+            );
+            renderList(filtered);
+        });
+
+        document.getElementById('current-date').innerText = new Date().toLocaleString().toUpperCase();
+    </script>
+</body>
+</html>
